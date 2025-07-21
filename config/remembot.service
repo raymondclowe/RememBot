@@ -1,0 +1,32 @@
+[Unit]
+Description=RememBot - Remember Robot Telegram Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remembot
+Group=remembot
+WorkingDirectory=/opt/remembot
+Environment=TELEGRAM_BOT_TOKEN=your_bot_token_here
+Environment=REMEMBOT_DB_PATH=/var/lib/remembot/remembot.db
+Environment=OPENAI_API_KEY=your_openai_api_key_here
+ExecStart=/opt/remembot/.venv/bin/python -m remembot
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=remembot
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/remembot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
