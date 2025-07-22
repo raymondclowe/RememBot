@@ -135,34 +135,92 @@ class RememBot:
         await update.message.reply_text(stats_text)
     
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /search command."""
+        """Handle /search command with enhanced FTS5 support."""
         user_id = update.effective_user.id
         
         if not context.args:
-            await update.message.reply_text("Please provide a search query. Example: /search python tutorial")
+            await update.message.reply_text(
+                "Please provide a search query. Example: /search python tutorial\n\n"
+                "Advanced options:\n"
+                "• /search type:url python - Search only URLs\n"
+                "• /search platform:youtube - Search specific platforms\n"
+                "• /search \"exact phrase\" - Exact phrase search"
+            )
             return
         
         query = " ".join(context.args)
-        results = await self.query_handler.process_query(user_id, query)
         
-        if not results:
-            await update.message.reply_text(f"No results found for '{query}'. Try a different search term.")
+        # Parse search modifiers
+        content_type = None
+        source_platform = None
+        
+        # Extract type filter
+        if "type:" in query:
+            parts = query.split("type:")
+            if len(parts) > 1:
+                type_part = parts[1].split()[0]
+                content_type = type_part
+                query = query.replace(f"type:{type_part}", "").strip()
+        
+        # Extract platform filter
+        if "platform:" in query:
+            parts = query.split("platform:")
+            if len(parts) > 1:
+                platform_part = parts[1].split()[0]
+                source_platform = platform_part
+                query = query.replace(f"platform:{platform_part}", "").strip()
+        
+        if not query.strip():
+            await update.message.reply_text("Please provide a search term after filters.")
             return
         
-        # Format results
-        response = f"🔍 Found {len(results)} result(s) for '{query}':\n\n"
-        
-        for i, item in enumerate(results[:5], 1):  # Limit to first 5 results
-            content_preview = (item['extracted_info'] or item['original_share'])[:100]
-            if len(content_preview) == 100:
-                content_preview += "..."
-            
-            response += (
-                f"{i}. [{item['content_type']}] {content_preview}\n"
-                f"   📅 {item['created_at']}\n\n"
+        try:
+            # Search with enhanced database
+            results, total = await self.db_manager.search_content(
+                user_id, query, content_type=content_type, 
+                source_platform=source_platform, limit=10
             )
-        
-        await update.message.reply_text(response)
+            
+            if not results:
+                await update.message.reply_text(
+                    f"No results found for '{query}'. Try:\n"
+                    "• Different keywords\n"
+                    "• Removing filters\n"
+                    "• Checking spelling"
+                )
+                return
+            
+            # Format results with enhanced information
+            response = f"🔍 Found {len(results)} of {total} result(s) for '{query}'"
+            if content_type:
+                response += f" (type: {content_type})"
+            if source_platform:
+                response += f" (platform: {source_platform})"
+            response += ":\n\n"
+            
+            for i, item in enumerate(results[:5], 1):  # Limit to first 5 results
+                content_preview = (item['extracted_info'] or item['original_share'])[:100]
+                if len(content_preview) == 100:
+                    content_preview += "..."
+                
+                # Add platform info if available
+                platform_info = ""
+                if item.get('source_platform'):
+                    platform_info = f" [{item['source_platform']}]"
+                
+                response += (
+                    f"{i}. [{item['content_type']}{platform_info}] {content_preview}\n"
+                    f"   📅 {item['created_at']}\n\n"
+                )
+            
+            if total > 5:
+                response += f"\n... and {total - 5} more results. Use more specific terms to narrow down."
+            
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            logger.error(f"Search error for user {user_id}: {e}")
+            await update.message.reply_text("❌ Search failed. Please try again later.")
     
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle text messages (URLs and plain text) with enhanced error handling."""
@@ -187,14 +245,16 @@ class RememBot:
                     logger.warning(f"Classification failed for user {user_id}: {e}")
                     taxonomy = {'error': str(e)}
             
-            # Store in database
+            # Store in database with processing time
+            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
             await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=text,
                 content_type=processed_content['content_type'],
                 metadata=json.dumps(processed_content['metadata']),
                 extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None
+                taxonomy=json.dumps(taxonomy) if taxonomy else None,
+                processing_time_ms=processing_time
             )
             
             # Send success feedback for errors or notable processing
@@ -249,14 +309,16 @@ class RememBot:
                     logger.warning(f"Classification failed for user {user_id}: {e}")
                     taxonomy = {'error': str(e)}
             
-            # Store in database
+            # Store in database with processing time
+            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
             await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Photo: {photo.file_id}",
                 content_type="image",
                 metadata=json.dumps(processed_content['metadata']),
                 extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None
+                taxonomy=json.dumps(taxonomy) if taxonomy else None,
+                processing_time_ms=processing_time
             )
             
             # Update processing message with result
@@ -309,14 +371,16 @@ class RememBot:
                     logger.warning(f"Classification failed for user {user_id}: {e}")
                     taxonomy = {'error': str(e)}
             
-            # Store in database
+            # Store in database with processing time
+            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
             await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Document: {document.file_name}",
                 content_type="document",
                 metadata=json.dumps(processed_content['metadata']),
                 extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None
+                taxonomy=json.dumps(taxonomy) if taxonomy else None,
+                processing_time_ms=processing_time
             )
             
             # Update processing message with result
