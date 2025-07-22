@@ -22,6 +22,7 @@ dependencies = [
     "aiosqlite>=0.17.0",
     "pydantic[email]>=2.10.6",
     "pydantic-settings>=2.8.1",
+    "sentence-transformers>=3.2.1",
 ]
 
 [project.optional-dependencies]

@@ -24,6 +24,7 @@ from .classifier import ContentClassifier
 from .query_handler import QueryHandler
 from .config import get_config
 from .health import HealthChecker
+from .embeddings import EmbeddingsManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class RememBot:
         self.classifier = ContentClassifier()
         self.query_handler = QueryHandler(db_manager)
         self.health_checker = HealthChecker(db_manager)
+        self.embeddings_manager = EmbeddingsManager(config.database_path)
         
         # Create application
         self.application = Application.builder().token(token).build()
@@ -84,6 +86,9 @@ class RememBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
+        self.application.add_handler(CommandHandler("semantic", self.semantic_search_command))
+        self.application.add_handler(CommandHandler("similar", self.similar_command))
+        self.application.add_handler(CommandHandler("embeddings", self.embeddings_command))
         
         # Message handlers for content ingestion
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
@@ -112,7 +117,10 @@ class RememBot:
             "/start - Welcome message\n"
             "/help - Show this help\n"
             "/stats - Show your storage statistics\n"
-            "/search <query> - Search your stored content\n\n"
+            "/search <query> - Search your stored content\n"
+            "/semantic <query> - Semantic search (AI-powered)\n"
+            "/similar <content_id> - Find similar content\n"
+            "/embeddings - Show AI embedding statistics\n\n"
             "Just share any content with me and I'll store it silently for later retrieval!"
         )
         await update.message.reply_text(help_text)
@@ -222,6 +230,165 @@ class RememBot:
             logger.error(f"Search error for user {user_id}: {e}")
             await update.message.reply_text("❌ Search failed. Please try again later.")
     
+    async def semantic_search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /semantic command for AI-powered semantic search."""
+        user_id = update.effective_user.id
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a search query for semantic search.\n"
+                "Example: /semantic machine learning concepts\n\n"
+                "Semantic search understands meaning and context, not just keywords."
+            )
+            return
+        
+        query = " ".join(context.args)
+        
+        # Send processing indicator
+        processing_msg = await update.message.reply_text("🧠 Performing AI semantic search...", quote=False)
+        
+        try:
+            # Perform semantic search
+            results = await self.embeddings_manager.semantic_search(
+                user_id, query, limit=10, similarity_threshold=0.3
+            )
+            
+            if not results:
+                await processing_msg.edit_text(
+                    f"🤖 No semantically similar results found for '{query}'.\n\n"
+                    "Tips:\n"
+                    "• Try broader or different terms\n"
+                    "• Use /search for keyword-based search\n"
+                    "• More content helps improve AI search"
+                )
+                return
+            
+            # Format results with similarity scores
+            response = f"🧠 Found {len(results)} semantically similar result(s) for '{query}':\n\n"
+            
+            for i, item in enumerate(results[:5], 1):
+                content_preview = (item['extracted_info'] or item['original_share'])[:100]
+                if len(content_preview) == 100:
+                    content_preview += "..."
+                
+                # Add platform info if available
+                platform_info = ""
+                if item.get('source_platform'):
+                    platform_info = f" [{item['source_platform']}]"
+                
+                # Format similarity score
+                similarity = item['similarity_score']
+                similarity_bar = "🟢" if similarity > 0.7 else "🟡" if similarity > 0.5 else "🟠"
+                
+                response += (
+                    f"{i}. {similarity_bar} {similarity:.1%} similarity\n"
+                    f"[{item['content_type']}{platform_info}] {content_preview}\n"
+                    f"📅 {item['created_at']}\n\n"
+                )
+            
+            if len(results) > 5:
+                response += f"... and {len(results) - 5} more results."
+            
+            await processing_msg.edit_text(response)
+            
+        except Exception as e:
+            logger.error(f"Semantic search error for user {user_id}: {e}")
+            await processing_msg.edit_text("❌ Semantic search failed. Please try again later.")
+    
+    async def similar_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /similar command to find content similar to a specific item."""
+        user_id = update.effective_user.id
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Please provide a content ID to find similar items.\n"
+                "Example: /similar 123\n\n"
+                "You can get content IDs from search results."
+            )
+            return
+        
+        try:
+            content_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Please provide a valid content ID (number).")
+            return
+        
+        try:
+            # Find similar content
+            results = await self.embeddings_manager.get_similar_content(
+                content_id, user_id, limit=5
+            )
+            
+            if not results:
+                await update.message.reply_text(
+                    f"No similar content found for item {content_id}.\n"
+                    "This might mean:\n"
+                    "• The content doesn't exist or isn't yours\n"
+                    "• No AI embeddings are available for comparison\n"
+                    "• No other content is similar enough"
+                )
+                return
+            
+            # Format results
+            response = f"🔗 Content similar to item {content_id}:\n\n"
+            
+            for i, item in enumerate(results, 1):
+                content_preview = (item['extracted_info'] or item['original_share'])[:80]
+                if len(content_preview) == 80:
+                    content_preview += "..."
+                
+                similarity = item['similarity_score']
+                similarity_bar = "🟢" if similarity > 0.7 else "🟡" if similarity > 0.5 else "🟠"
+                
+                response += (
+                    f"{i}. {similarity_bar} {similarity:.1%} similarity\n"
+                    f"ID: {item['id']} | {content_preview}\n"
+                    f"📅 {item['created_at']}\n\n"
+                )
+            
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            logger.error(f"Similar content error for user {user_id}: {e}")
+            await update.message.reply_text("❌ Failed to find similar content. Please try again later.")
+    
+    async def embeddings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /embeddings command to show AI embedding statistics."""
+        user_id = update.effective_user.id
+        
+        try:
+            # Get embedding statistics
+            stats = await self.embeddings_manager.get_embedding_stats()
+            
+            if 'error' in stats:
+                await update.message.reply_text(f"❌ Error getting embedding stats: {stats['error']}")
+                return
+            
+            response = "🧠 AI Embedding Statistics:\n\n"
+            
+            if not stats['model_available']:
+                response += "❌ AI embeddings not available (sentence-transformers not installed)\n"
+            else:
+                response += f"✅ AI Model: {stats['current_model']}\n"
+                response += f"📊 Total embeddings: {stats['total_embeddings']:,}\n"
+                response += f"📋 Total content items: {stats['total_content_items']:,}\n"
+                response += f"📈 Coverage: {stats['coverage_percent']}%\n\n"
+                
+                if stats['coverage_percent'] < 100:
+                    missing = stats['total_content_items'] - stats['total_embeddings']
+                    response += f"⚠️ {missing:,} items need embeddings generated\n"
+                    response += "Use /semantic search to automatically generate embeddings\n\n"
+                
+                response += "Models:\n"
+                for model, count in stats['by_model'].items():
+                    response += f"• {model}: {count:,} embeddings\n"
+            
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            logger.error(f"Embeddings stats error for user {user_id}: {e}")
+            await update.message.reply_text("❌ Failed to get embedding statistics.")
+    
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle text messages (URLs and plain text) with enhanced error handling."""
         user_id = update.effective_user.id
@@ -247,7 +414,7 @@ class RememBot:
             
             # Store in database with processing time
             processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
-            await self.db_manager.store_content(
+            item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=text,
                 content_type=processed_content['content_type'],
@@ -256,6 +423,14 @@ class RememBot:
                 taxonomy=json.dumps(taxonomy) if taxonomy else None,
                 processing_time_ms=processing_time
             )
+            
+            # Generate embedding asynchronously (don't wait for completion)
+            if processed_content['extracted_info'] and processed_content['extracted_info'].strip():
+                asyncio.create_task(
+                    self.embeddings_manager.store_embedding(
+                        item_id, processed_content['extracted_info']
+                    )
+                )
             
             # Send success feedback for errors or notable processing
             if processed_content.get('metadata', {}).get('error'):
@@ -311,7 +486,7 @@ class RememBot:
             
             # Store in database with processing time
             processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
-            await self.db_manager.store_content(
+            item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Photo: {photo.file_id}",
                 content_type="image",
@@ -320,6 +495,16 @@ class RememBot:
                 taxonomy=json.dumps(taxonomy) if taxonomy else None,
                 processing_time_ms=processing_time
             )
+            
+            # Generate embedding for OCR text if available
+            if (processed_content.get('metadata', {}).get('has_text') and 
+                processed_content['extracted_info'] and 
+                processed_content['extracted_info'].strip()):
+                asyncio.create_task(
+                    self.embeddings_manager.store_embedding(
+                        item_id, processed_content['extracted_info']
+                    )
+                )
             
             # Update processing message with result
             if processed_content.get('metadata', {}).get('error'):
@@ -373,7 +558,7 @@ class RememBot:
             
             # Store in database with processing time
             processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
-            await self.db_manager.store_content(
+            item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Document: {document.file_name}",
                 content_type="document",
@@ -382,6 +567,14 @@ class RememBot:
                 taxonomy=json.dumps(taxonomy) if taxonomy else None,
                 processing_time_ms=processing_time
             )
+            
+            # Generate embedding for document content
+            if processed_content['extracted_info'] and processed_content['extracted_info'].strip():
+                asyncio.create_task(
+                    self.embeddings_manager.store_embedding(
+                        item_id, processed_content['extracted_info']
+                    )
+                )
             
             # Update processing message with result
             if processed_content.get('metadata', {}).get('error'):
