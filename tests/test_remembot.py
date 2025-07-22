@@ -43,8 +43,9 @@ class TestDatabaseManager:
         assert item_id > 0
         
         # Search content
-        results = await db_manager.search_content(12345, "Python")
+        results, total = await db_manager.search_content(12345, "Python")
         assert len(results) == 1
+        assert total == 1
         assert results[0]['extracted_info'] == "This is test content about Python programming"
     
     @pytest.mark.asyncio

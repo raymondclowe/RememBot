@@ -275,7 +275,7 @@ class TestAIKeyConfiguration:
             # Should still work with keyword-based classification
             assert result['dewey_decimal'] == "004"
             assert 'programming' in result['subjects']
-            assert result['classification_method'] == 'keyword_matching'
+            assert result['classification_method'] == 'enhanced_keyword_matching'
             print("✓ Fallback classification working correctly")
 
 
