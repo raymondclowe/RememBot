@@ -216,12 +216,12 @@ class RememBot:
         except Exception as e:
             logger.error(f"Error processing document for user {user_id}: {e}")
     
-    async def run(self):
+    def run(self):
         """Run the bot using long polling."""
         logger.info("Starting RememBot with long polling...")
         
-        # Start polling
-        await self.application.run_polling(
+        # Start polling - run_polling manages its own event loop
+        self.application.run_polling(
             poll_interval=1.0,
             timeout=10,
             bootstrap_retries=5

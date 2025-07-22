@@ -43,7 +43,7 @@ def main():
         bot = RememBot(bot_token, db_manager)
         
         logger.info("Starting RememBot...")
-        asyncio.run(bot.run())
+        bot.run()
         
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
