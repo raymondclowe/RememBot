@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RememBot Data</title>
+</head>
+<body>
+    <h2>Welcome, Telegram User {{ telegram_user_id }}</h2>
+    <a href="/logout">Logout</a>
+    <h3>Your Saved Information</h3>
+    <table border="1">
+        <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Content</th>
+            <th>Created At</th>
+        </tr>
+        {% for item in data %}
+        <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.type }}</td>
+            <td>{{ item.content }}</td>
+            <td>{{ item.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

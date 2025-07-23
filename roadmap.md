@@ -1,5 +1,11 @@
 # RememBot Enhancement Roadmap
 
+## AI and Embeddings Direction
+
+- No GPU/NVIDIA dependencies or local embeddings (e.g., sentence-transformers, torch)
+- All AI features use cloud APIs (OpenAI, OpenRouter, etc)
+- Optional support for local models (Ollama, llamacpp) for background tasks in the future
+
 ## 📊 Current State vs. Specifications
 
 ### ✅ **Implemented Core Features**

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enter PIN</title>
+</head>
+<body>
+    <h2>Your authentication PIN: <span style="color:blue">{{ pin }}</span></h2>
+    <p>Send this PIN to the RememBot Telegram bot. The bot will reply with your Telegram user ID.</p>
+    <form action="/submit_pin" method="post">
+        <label for="pin">PIN:</label>
+        <input type="text" name="pin" required value="{{ pin }}"><br>
+        <button type="submit">Authenticate</button>
+    </form>
+    {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+</body>
+</html>

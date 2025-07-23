@@ -58,6 +58,19 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # Ensure all expected columns exist
+            expected_columns = {
+                'source_platform': 'TEXT',
+                'processing_time_ms': 'REAL',
+                'content_hash': 'TEXT',
+                'version': 'INTEGER DEFAULT 1'
+            }
+            cursor = conn.execute("PRAGMA table_info(content_items)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            for col, coltype in expected_columns.items():
+                if col not in existing_columns:
+                    logger.info(f"Adding missing column '{col}' to content_items table.")
+                    conn.execute(f"ALTER TABLE content_items ADD COLUMN {col} {coltype}")
             
             # Create user activity tracking table
             conn.execute('''

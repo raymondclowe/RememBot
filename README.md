@@ -1,4 +1,8 @@
 # RememBot
+
+## AI and Embeddings Note
+
+RememBot does **not** use GPU, NVIDIA libraries, or local embeddings (e.g., sentence-transformers, torch). All AI features are handled via cloud APIs (OpenAI, OpenRouter, etc). Optionally, you may use local models like Ollama or llamacpp for background tasks, but this is not required and not enabled by default.
 Remember Bot - Back up your Brain
 
 RememBot is a Telegram bot service that runs on Linux and helps you store, organize, and retrieve any content you share with it. Instead of bookmarking or saving content across different platforms, just share it with RememBot through Telegram and query it later using natural language.

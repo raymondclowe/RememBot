@@ -1,5 +1,9 @@
 # Specification for"RememBot" - short for remember robot.
 
+## AI and Embeddings Approach
+
+RememBot does not use GPU acceleration, NVIDIA libraries, or local embedding models. All semantic search and AI features are performed via cloud APIs (OpenAI, OpenRouter, etc). Optionally, local models (Ollama, llamacpp) may be supported for background tasks, but are not required or enabled by default.
+
 It will be a telegram bot that runs as a service on a linux desktop - it is behind a nat firewall so it may need to do long polling not webhook.
 
 
