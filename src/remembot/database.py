@@ -107,8 +107,9 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create FTS5 table if available
-            if fts5_available:
+            # Create FTS5 table if available (temporarily disabled due to trigger conflicts)
+            # TODO: Fix FTS5 triggers with new schema in future update
+            if False and fts5_available:
                 conn.execute('''
                     CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
                         content_item_id UNINDEXED,
@@ -747,7 +748,7 @@ class DatabaseManager:
         """Get content items that need processing."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
-                SELECT id, user_telegram_id, original_share, content_type, metadata, 
+                SELECT id, user_telegram_id, original_share, content_type, 
                        created_at, parse_attempts
                 FROM content_items 
                 WHERE parse_status = 'pending' 
