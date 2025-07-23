@@ -137,3 +137,69 @@ The system runs on a Linux desktop behind a NAT firewall, using **long polling**
 - **Mobile App:** Native mobile interface complementing web access
 
 This architecture provides a clean separation of concerns with scalable, maintainable components while keeping the user experience simple and focused.
+
+---
+
+## Appendix A: Background Parser Details
+
+The Background Parser is a separate service that continuously processes stored content items using AI to enhance them with summaries, key points, and classifications. For complete details, see the [Background Parser Specification](docs/background_parser_spec.md).
+
+### Key Features:
+- **Continuous Processing:** Monitors database for unparsed items
+- **Multi-format Support:** Handles text, URLs, images, documents, and other files
+- **AI Integration:** Uses cloud APIs (OpenRouter, OpenAI) with local fallback (Ollama)
+- **Resilient Design:** Error handling, retry mechanisms, and graceful degradation
+- **Storage Strategy:** Preserves originals while adding AI-enhanced metadata
+
+### Processing Pipeline:
+1. **Content Detection:** Scans for items with `parse_status = 'pending'`
+2. **Type-Specific Processing:** Different handlers for each content type
+3. **AI Enhancement:** Summarization, classification, key point extraction
+4. **Result Storage:** Updates database with processed information
+5. **Error Handling:** Retry logic and failure recovery
+
+---
+
+## Appendix B: Background Knowledge Linker Details
+
+The Background Knowledge Linker is a future service that builds connections between content items, creates knowledge graphs, and provides temporal-aware insights. For complete details, see the [Knowledge Linker Specification](docs/knowledge_linker_spec.md).
+
+### Key Capabilities:
+- **Relationship Detection:** Automatic connections between content items
+- **Entity Extraction:** People, places, organizations, concepts
+- **Topic Evolution:** Track how subjects change over time
+- **Knowledge Graphs:** Visual representation of information relationships
+- **Temporal Awareness:** Understand when and how information relates
+
+### Analysis Components:
+1. **Content Analysis:** Entity extraction, topic modeling, semantic similarity
+2. **Graph Construction:** Nodes (content, entities, topics) and weighted edges
+3. **Pattern Recognition:** Trend detection, knowledge gaps, learning paths
+4. **Insight Generation:** Recommendations, discovery suggestions, evolution tracking
+
+---
+
+## Appendix C: Web Interface Details
+
+The Web Interface provides rich content management and discovery capabilities accessed through secure authentication from the Telegram bot's `/web` command.
+
+### Authentication Flow:
+1. User sends `/web` command to Telegram bot
+2. Bot generates secure token with 24-hour expiry
+3. Bot returns URL with embedded authentication parameters
+4. User clicks link and is automatically logged into web interface
+5. Token is marked as used (single-use security)
+
+### Interface Features:
+- **Content Browser:** Table view with pagination, sorting, filtering
+- **Advanced Search:** Full-text search including AI summaries and classifications
+- **Content Management:** View, edit, delete, organize stored items
+- **Visual Discovery:** Thumbnail previews, content type icons
+- **Export Options:** Download content in various formats
+- **Analytics Dashboard:** Usage patterns, topic trends, knowledge insights
+
+### Technical Implementation:
+- **Frontend:** Modern web framework (React/Vue.js) with responsive design
+- **Backend:** RESTful API (Flask/FastAPI) with database integration
+- **Security:** Token-based authentication with expiry and single-use enforcement
+- **Performance:** Caching, pagination, lazy loading for large datasets
