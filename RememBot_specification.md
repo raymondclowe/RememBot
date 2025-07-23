@@ -1,4 +1,4 @@
-# Specification for"RememBot" - short for remember robot.
+# Specification for "RememBot" - short for remember robot.
 
 ## AI and Embeddings Approach
 
@@ -6,143 +6,134 @@ RememBot does not use GPU acceleration, NVIDIA libraries, or local embedding mod
 
 It will be a telegram bot that runs as a service on a linux desktop - it is behind a nat firewall so it may need to do long polling not webhook.
 
-
-
 ## RememBot Specification
 
 ### Overview
 
-**RememBot** (Remember Robot) is a Telegram bot service running on a Linux desktop behind a NAT firewall. It relies on **long polling** due to network constraints. It enables users to share any content (URLs, images, documents, text) through Telegram’s "Share" feature instead of saving or bookmarking inside individual platforms. RememBot ingests and archives this content intelligently for later querying.
+**RememBot** (Remember Robot) is a personal knowledge management system consisting of three main components:
 
-### Architecture \& Deployment
+1. **Telegram Bot** - Simple interface for content ingestion and web access
+2. **Background Parser** - Continuous AI-powered content processing  
+3. **Web Interface** - Rich viewing and management interface
 
-- **Platform:** Linux desktop service (Ubuntu/Debian recommended)
-- **Telegram communication:** Use Telegram Bot API via **long polling** to avoid public IP/SSL complications from firewall/NAT constraints[^1][^3][^5].
-- **Service management:** Run as a **systemd service** for automatic start/stop and monitoring[^2].
+The system runs on a Linux desktop behind a NAT firewall, using **long polling** for Telegram communication. It enables users to share any content (URLs, images, documents, text) through Telegram's "Share" feature, which is then intelligently processed and made available through a web interface.
 
-Written in Python.  Astral UV modern package management ('uv run', 'uv add', 'project.toml'). 
+### Architecture & Components
 
+#### 1. Telegram Bot
+**Purpose:** Minimal interface focused on content ingestion and web access
 
-### Core Functionalities
+**Functionality:**
+- **Silent Content Processing:** Receives and stores any shared content (text, URLs, images, voice notes, PDFs, documents) without replies or acknowledgment messages
+- **Help Command:** `/help` - Provides overview of how the system works and how to use it
+- **Web Access Command:** `/web` - Generates a secure link with authentication parameters for accessing the web interface
 
-1. **Message Ingestion**
-    - RememBot silently ingests any message or shared content sent to it.
-    - No reply or acknowledgement message to user, just silent storage of data.
-    - Supports multiple message types:
-        - URLs
-        - Images
-        - Documents (PDF, Word, Excel)
-        - Plain text
-2. **Content Processing**
-    - **URL ingestion:**
-        - Fetch page content (preferably fallback to services like Tavily MCP Extract if blocked by captchas).
-        - Extract article text, metadata, author, publication date if available.
-    - **Image ingestion:**
-        - Run local image recognition AI model (CPU mode OK, slow is acceptable)
-        - Apply OCR to extract readable text when appropriate.
-    - **Document ingestion:**
-        - Parse metadata and content from popular document formats:
-            - PDF
-            - Word (.docx)
-            - Excel (.xlsx)
-3. **Data Storage**
-    - Local **SQLite** database initially.
-    - Schema includes:
+**Important:** The bot does NOT provide search, statistics, or content management commands. All content interaction happens through the web interface.
 
+#### 2. Background Parser
+**Purpose:** Continuous processing of stored items with AI enhancement
+
+**Process:**
+- Continuously monitors the database for unparsed items
+- Processes different content types with appropriate handlers:
+  - **Text:** Store with metadata, generate AI summary
+  - **URLs:** Fetch page content, extract text as markdown, generate AI summary and key points, enable full-text search
+  - **Images:** Extract EXIF metadata, generate AI description of content, perform OCR for text extraction, use enhanced AI if OCR results are unclear
+  - **PDFs:** Extract text content, generate AI summary
+  - **Office Documents:** Parse to text-based formats (CSV for spreadsheets), send to AI with context for summarization
+  - **Other Documents:** Extract readable text from binary content, generate AI summary
+
+**Storage Strategy:**
+- **Original Content:** Always preserved
+  - Small items: Stored in database
+  - Large items: Stored in filesystem with git-like hashing for organization
+  - Web pages: Store complete HTML snapshot for historical reference
+- **Processed Content:** AI summaries, extracted text, metadata stored alongside originals
+
+#### 3. Background Knowledge Linker
+**Purpose:** Build connections and knowledge graphs (future component)
+
+**Concept:**
+- Continuously analyze all knowledge items for connections
+- Build metadata database of topics linking to individual items
+- Create temporal-aware knowledge graph
+- Enable topic-based discovery and cross-referencing
+
+#### 4. Web Interface
+**Purpose:** Primary user interface for content management and discovery
+
+**Authentication:** 
+- Accessed via secure link from `/web` command containing:
+  - Secret authentication token
+  - Telegram user ID parameter
+  - Automatic login without additional credentials
+
+**Features:**
+- **Simple Table View:** Recent items first with pagination
+- **Full-Text Search:** Includes original content and AI-generated summaries
+- **Content Management:** Delete, edit, and organize items
+- **Responsive Design:** Works on mobile and desktop
+
+### Technical Architecture
+
+| Component | Technology / Tool |
+| :-- | :-- |
+| Telegram Bot | Python/python-telegram-bot with long polling |
+| Background Parser | Python service with continuous processing |
+| Content Processing | Custom fetch + Tavily MCP Extract fallback |
+| AI Processing | OpenAI/OpenRouter APIs for summaries and classification |
+| Image Processing | Local OCR (Tesseract) + AI vision models |
+| Document Parsing | python-docx, PyPDF2, openpyxl |
+| Database | SQLite (local, upgradeable to PostgreSQL) |
+| Web Interface | Modern web framework (Flask/FastAPI + React/Vue) |
+| File Storage | Git-like hashing system for large files |
+| System Service | systemd units for all components |
+
+### Database Schema
 
 | Field | Description |
 | :-- | :-- |
 | `id` | Unique item ID |
-| `user_telegram_id` | Telegram user ID (to separate user data) |
-| `original_share` | Raw input (URL, text, image binary ref) |
-| `metadata` | Date, time, source platform (if detectable), content-type |
-| `extracted_info` | Text content from URL, OCR text, document text |
-| `taxonomy` | Classification tags generated by AI (Dewey Decimal, British Library, LOC scheme) |
+| `user_telegram_id` | Telegram user ID (user isolation) |
+| `original_share` | Raw input content |
+| `content_type` | Type classification (url, image, document, text) |
+| `metadata` | JSON: date, time, source platform, processing status |
+| `extracted_info` | Processed text content |
+| `ai_summary` | AI-generated summary |
+| `ai_key_points` | AI-extracted key points |
+| `taxonomy` | AI classification tags |
+| `parse_status` | Processing status (pending, processing, complete, error) |
+| `processing_time` | Time taken for processing |
 
-    - Future-proof schema design for easy upgrade to scalable DB (e.g., PostgreSQL).
-4. **Taxonomy \& Classification**
-    - Use AI to assign classification tags aligned with library cataloging standards (Dewey Decimal, British Library, Library of Congress).
-    - Enables better semantic search and organization.
-5. **Querying \& Retrieval**
-    - Users interact with RememBot via Telegram chat commands or buttons.
-    - Basic queries supported:
-        - "What was that tweet about X I read last week?"
-        - "Summarize all articles about Y"
-        - "What is the URL for that video I saved about Z?"
-    - Advanced analytics queries:
-        - Sentiment analysis trends over time on mentioned topics.
-        - Price prediction statistics aggregation from saved articles/tweets.
-    - Query processing workflow:
+### User Experience Flow
 
-6. User query converted into structured requests.
-7. Query translated programmatically into SQL statements with AI assistance.
-8. Results post-processed and summarized by AI (e.g., GPT) as needed.
-9. Self-correcting logic: if no results, AI suggests broader queries or alternative SQL.
-10. Transparent feedback to user if results are insufficient.
-1. **Roadmap: Web Interface**
-    - Future plan to create a web interface for:
-        - More flexible querying and visualization.
-        - Managing large datasets.
-        - Viewing taxonomy and metadata visually.
+1. **Content Sharing:** User shares any content with RememBot via Telegram
+2. **Silent Storage:** Bot stores content immediately without user feedback  
+3. **Background Processing:** Parser processes content asynchronously with AI
+4. **Web Access:** User uses `/web` command to get authenticated web interface link
+5. **Content Discovery:** User searches, browses, and manages content through web interface
 
-### Technical Details
+### Deployment & Infrastructure
 
-| Component | Technology / Tool |
-| :-- | :-- |
-| Telegram Bot | Python/grammY or python-telegram-bot with long polling |
-| Content scraping | Custom fetch + Tavily MCP Extract fallback for captchas |
-| Image Recognition | Local AI model (e.g., TensorFlow/PyTorch model in CPU mode) |
-| OCR | Tesseract OCR or equivalent on local server |
-| Document Parsing | python-docx, PyPDF2, openpyxl for Word, PDF, Excel |
-| Database | SQLite (local, upgradeable) |
-| AI Model for Taxonomy \& Queries | Integration with OpenAI GPT-4 or local LLM for SQL generation and summarization |
-| System Service | systemd unit to keep bot running persistently |
+- **Platform:** Linux desktop service (Ubuntu/Debian recommended)
+- **Network:** NAT firewall compatibility with long polling
+- **Services:** Multiple systemd services for bot, parser, knowledge linker, web interface
+- **Package Management:** Python with UV for modern dependency management
+- **Storage:** Local filesystem and database with cloud API integration
 
-### User Experience
+### Privacy & Security
 
-- Users share any content to RememBot via Telegram's Share.
-- No active replies cluttering the chat.
-- Later, users send queries in natural language and receive concise answers or summaries.
-- Bot handles multi-format inputs automatically and stores richly annotated entries.
-- Privacy ensured by storing data locally, segregated by Telegram user ID.
+- **Local Storage:** All data stored locally on user's machine
+- **User Isolation:** Complete separation of data by Telegram user ID
+- **Secure Web Access:** Time-limited authentication tokens
+- **API Security:** Secure handling of cloud AI API keys
 
+### Future Enhancements
 
-### Summary
+- **Knowledge Graph Visualization:** Visual representation of content connections
+- **Advanced Analytics:** Trends, patterns, and insights from stored content
+- **Export Options:** Multiple format support for data portability
+- **Collaborative Features:** Shared knowledge bases for teams
+- **Mobile App:** Native mobile interface complementing web access
 
-| Feature | Description |
-| :-- | :-- |
-| Platform | Linux desktop, systemd service |
-| Telegram update method | Long polling due to NAT/firewall |
-| Input types supported | URLs, images, documents, text |
-| Content extraction | Fetch/parse URLs, local AI-based image recognition \& OCR, document parsing |
-| Storage | SQLite DB with user isolation |
-| Semantic enrichment | AI-driven taxonomy tagging (library classification) |
-| Query interface | Telegram bot commands with AI-driven SQL query formation |
-| Future extension | Web UI for advanced queries and data management |
-
-This specification balances ease of deployment, privacy, and extensibility, leveraging the Telegram platform’s broad "Share" feature and liberating users from fragmented bookmarking workflows. It supports rich content ingestion, semantic organization, and AI-powered query capabilities tailored to individual users.
-
-If implemented carefully, RememBot can become a personal knowledge assistant bridging multiple media and platforms seamlessly.
-
-<div style="text-align: center">⁂</div>
-
-[^1]: https://grammy.dev/guide/deployment-types
-
-[^2]: https://github.com/therealpeterpython/remembot
-
-[^3]: https://github.com/pytopia/project-nashenas-telegram-bot/blob/main/Long Polling vs. Webhook.md
-
-[^4]: https://pub.towardsai.net/build-deploy-a-python-bot-with-short-term-and-long-term-memory-a3f1cd6254b8?gi=e7556f534013
-
-[^5]: https://www.reddit.com/r/TelegramBots/comments/525s40/q_polling_vs_webhook/
-
-[^6]: https://stackoverflow.com/questions/tagged/bots?tab=newest\&page=10
-
-[^7]: https://pinggy.io/blog/how_to_set_up_and_test_telegram_bot_webhook/
-
-[^8]: https://stackoverflow.com/questions/tagged/telegram-bot?tab=newest\&page=20
-
-[^9]: https://hostman.com/tutorials/difference-between-polling-and-webhook-in-telegram-bots/
-
-[^10]: https://stackoverflow.com/questions/tagged/telegram-bot?tab=trending\&page=46
-
+This architecture provides a clean separation of concerns with scalable, maintainable components while keeping the user experience simple and focused.
