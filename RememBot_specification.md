@@ -2,7 +2,7 @@
 
 ## AI and Embeddings Approach
 
-RememBot does not use GPU acceleration, NVIDIA libraries, or local embedding models. All semantic search and AI features are performed via cloud APIs (OpenAI, OpenRouter, etc). Optionally, local models (Ollama, llamacpp) may be supported for background tasks, but are not required or enabled by default.
+RememBot does not use GPU acceleration, NVIDIA libraries, or local embedding models. All semantic search and AI features are performed via cloud APIs (OpenRouter, OpenAI, etc). Optionally, local models (Ollama, llamacpp) may be supported for background tasks, but are not required or enabled by default.
 
 It will be a telegram bot that runs as a service on a linux desktop - it is behind a nat firewall so it may need to do long polling not webhook.
 
@@ -81,7 +81,7 @@ The system runs on a Linux desktop behind a NAT firewall, using **long polling**
 | Telegram Bot | Python/python-telegram-bot with long polling |
 | Background Parser | Python service with continuous processing |
 | Content Processing | Custom fetch + Tavily MCP Extract fallback |
-| AI Processing | OpenAI/OpenRouter APIs for summaries and classification |
+| AI Processing | OpenRouter/OpenAI APIs for summaries and classification |
 | Image Processing | Local OCR (Tesseract) + AI vision models |
 | Document Parsing | python-docx, PyPDF2, openpyxl |
 | Database | SQLite (local, upgradeable to PostgreSQL) |
