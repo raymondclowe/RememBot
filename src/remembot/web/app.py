@@ -4,6 +4,7 @@ FastAPI web frontend for RememBot with token-based authentication and real datab
 
 import asyncio
 import json
+import logging
 import math
 import os
 from typing import Optional
@@ -13,15 +14,21 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.templating import Jinja2Templates
 
-# Import RememBot database manager
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
-from remembot.database import DatabaseManager
+# Import RememBot database manager using proper relative imports
+from ..database import DatabaseManager
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="supersecretkey-change-in-production")
-app.mount("/static", StaticFiles(directory="web/static"), name="static")
-templates = Jinja2Templates(directory="web/templates")
+
+# Load secret key from environment for security
+session_secret_key = os.environ.get("SESSION_SECRET_KEY", "supersecretkey-change-in-production")
+if session_secret_key == "supersecretkey-change-in-production" and os.environ.get("ENV") == "production":
+    raise RuntimeError("SESSION_SECRET_KEY must be set in the environment for production.")
+app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
+app.mount("/static", StaticFiles(directory="src/remembot/web/static"), name="static")
+templates = Jinja2Templates(directory="src/remembot/web/templates")
 
 # Initialize database manager with default path
 database_path = os.environ.get('REMEMBOT_DATABASE_PATH', 'data/remembot.db')
@@ -117,7 +124,7 @@ async def index(request: Request, page: int = Query(1, ge=1), search: str = Quer
             
         except Exception as e:
             # Log error and show empty state
-            print(f"Error loading user content: {e}")
+            logger.error(f"Error loading user content: {e}", exc_info=True)
             return templates.TemplateResponse("table.html", {
                 "request": request,
                 "items": [],

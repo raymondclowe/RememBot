@@ -107,9 +107,10 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create FTS5 table if available (temporarily disabled due to trigger conflicts)
+            # Create FTS5 table if available (controlled by feature flag)
             # TODO: Fix FTS5 triggers with new schema in future update
-            if False and fts5_available:
+            ENABLE_FTS5 = False  # Feature flag to enable/disable FTS5
+            if ENABLE_FTS5 and fts5_available:
                 conn.execute('''
                     CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
                         content_item_id UNINDEXED,
@@ -290,39 +291,44 @@ class DatabaseManager:
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Get user's content items with filtering and pagination."""
         async with aiosqlite.connect(self.db_path) as db:
-            # Build base query
-            base_query = '''
-                SELECT id, original_share, content_type, metadata, extracted_info, 
-                       taxonomy, source_platform, created_at
-                FROM content_items 
-                WHERE user_telegram_id = ?
-            '''
-            
+            # Build WHERE clause conditions
+            where_conditions = ['user_telegram_id = ?']
             params = [user_telegram_id]
             
             # Add optional filters
             if content_type:
-                base_query += ' AND content_type = ?'
+                where_conditions.append('content_type = ?')
                 params.append(content_type)
             
             if source_platform:
-                base_query += ' AND source_platform = ?'
+                where_conditions.append('source_platform = ?')
                 params.append(source_platform)
             
-            # Add ordering and pagination
-            query_with_order = base_query + ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
-            params.extend([limit, offset])
+            where_clause = ' AND '.join(where_conditions)
             
-            # Execute query
-            cursor = await db.execute(query_with_order, params)
+            # Build main query
+            main_query = f'''
+                SELECT id, original_share, content_type, metadata, extracted_info, 
+                       taxonomy, source_platform, created_at
+                FROM content_items 
+                WHERE {where_clause}
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
+            '''
+            
+            # Build count query using the same WHERE clause
+            count_query = f'''
+                SELECT COUNT(*)
+                FROM content_items 
+                WHERE {where_clause}
+            '''
+            
+            # Execute queries
+            main_params = params + [limit, offset]
+            cursor = await db.execute(main_query, main_params)
             rows = await cursor.fetchall()
             
             # Get total count
-            count_query = base_query.replace(
-                'SELECT id, original_share, content_type, metadata, extracted_info, taxonomy, source_platform, created_at',
-                'SELECT COUNT(*)'
-            )
-            cursor = await db.execute(count_query, params[:-2])  # Exclude limit and offset
+            cursor = await db.execute(count_query, params)
             total = (await cursor.fetchone())[0]
             
             # Convert to dictionaries
@@ -715,11 +721,11 @@ class DatabaseManager:
             logger.info(f"Stored web token for user {user_telegram_id}")
     
     async def validate_web_token(self, token: str, user_telegram_id: int) -> bool:
-        """Validate a web authentication token."""
+        """Validate a web authentication token (single-use for security)."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
                 SELECT id, expiry FROM web_tokens 
-                WHERE token = ? AND user_telegram_id = ?
+                WHERE token = ? AND user_telegram_id = ? AND used_at IS NULL
             ''', (token, user_telegram_id))
             
             row = await cursor.fetchone()
@@ -735,7 +741,7 @@ class DatabaseManager:
                 await db.commit()
                 return False
             
-            # Update the last used time (but don't mark as single-use anymore)
+            # Mark token as used (single-use for security)
             await db.execute('''
                 UPDATE web_tokens SET used_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
@@ -801,15 +807,6 @@ class DatabaseManager:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 ''', (error_message, item_id))
-            elif status == 'retry':
-                # Reset to pending for retry (with incremented attempts)
-                await db.execute('''
-                    UPDATE content_items 
-                    SET parse_status = 'pending',
-                        parse_attempts = parse_attempts + 1,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                ''', (item_id,))
             
             await db.commit()
             return True

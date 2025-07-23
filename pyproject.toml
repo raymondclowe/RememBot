@@ -39,6 +39,7 @@ dev = [
 [project.scripts]
 remembot = "remembot.main:main"
 remembot-parser = "remembot.background_parser:run_main"
+remembot-web = "remembot.web_main:main"
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9"]

@@ -12,13 +12,11 @@ import json
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent))
-
-from remembot.database import DatabaseManager
-from remembot.content_processor import ContentProcessor
-from remembot.classifier import ContentClassifier
-from remembot.config import get_config
+# Use proper relative imports instead of sys.path.append
+from .database import DatabaseManager
+from .content_processor import ContentProcessor
+from .classifier import ContentClassifier
+from .config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +39,8 @@ class BackgroundParser:
             self.config = SimpleNamespace(
                 parser_poll_interval=5,
                 parser_batch_size=10,
-                max_processing_time=300
+                max_processing_time=300,
+                parser_concurrency=3
             )
         
         # Setup signal handlers for graceful shutdown
@@ -85,7 +84,7 @@ class BackgroundParser:
         logger.info(f"Processing batch of {len(pending_items)} items")
         
         # Process items concurrently but with limited concurrency
-        semaphore = asyncio.Semaphore(3)  # Max 3 concurrent processing
+        semaphore = asyncio.Semaphore(getattr(self.config, 'parser_concurrency', 3))  # Max concurrent processing
         tasks = [self._process_item_with_semaphore(item, semaphore) for item in pending_items]
         
         await asyncio.gather(*tasks, return_exceptions=True)

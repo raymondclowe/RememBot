@@ -137,8 +137,8 @@
             {% endif %}
 
             <div class="item-actions">
-                <form method="post" action="/delete/{{ item.id }}" class="delete-form" onclick="return confirm('Are you sure you want to delete this item?')">
-                    <button type="submit" class="action-btn delete-btn">🗑️ Delete Item</button>
+                <form method="post" action="/delete/{{ item.id }}" class="delete-form">
+                    <button type="submit" class="action-btn delete-btn" onclick="return confirm('Are you sure you want to delete this item?')">🗑️ Delete Item</button>
                 </form>
             </div>
         </div>
