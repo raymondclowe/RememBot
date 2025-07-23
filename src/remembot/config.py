@@ -21,8 +21,8 @@ class RememBotConfig(BaseSettings):
     telegram_bot_token: str = Field(..., description="Telegram bot token from BotFather")
     
     # Optional AI settings
-    openai_api_key: Optional[str] = Field(None, description="OpenAI API key for AI features")
     openrouter_api_key: Optional[str] = Field(None, description="OpenRouter API key for AI features")
+    openai_api_key: Optional[str] = Field(None, description="OpenAI API key for AI features (fallback)")
     
     # Database settings
     database_path: str = Field(
@@ -174,13 +174,13 @@ class ConfigManager:
         """Check if any AI API key is configured."""
         if not self._config:
             return False
-        return bool(self._config.openai_api_key or self._config.openrouter_api_key)
+        return bool(self._config.openrouter_api_key or self._config.openai_api_key)
     
     def get_ai_api_key(self) -> Optional[str]:
-        """Get the first available AI API key."""
+        """Get the first available AI API key (prioritizing OpenRouter)."""
         if not self._config:
             return None
-        return self._config.openai_api_key or self._config.openrouter_api_key
+        return self._config.openrouter_api_key or self._config.openai_api_key
     
     def validate_startup_requirements(self):
         """Validate that all required configuration is present."""

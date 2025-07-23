@@ -2,7 +2,7 @@
 
 ## AI and Embeddings Note
 
-RememBot does **not** use GPU, NVIDIA libraries, or local embeddings (e.g., sentence-transformers, torch). All AI features are handled via cloud APIs (OpenAI, OpenRouter, etc). Optionally, you may use local models like Ollama or llamacpp for background tasks, but this is not required and not enabled by default.
+RememBot does **not** use GPU, NVIDIA libraries, or local embeddings (e.g., sentence-transformers, torch). All AI features are handled via cloud APIs (OpenRouter, OpenAI, etc). Optionally, you may use local models like Ollama or llamacpp for background tasks, but this is not required and not enabled by default.
 Remember Bot - Back up your Brain
 
 RememBot is a Telegram bot service that runs on Linux and helps you store, organize, and retrieve any content you share with it. Instead of bookmarking or saving content across different platforms, just share it with RememBot through Telegram and query it later using natural language.
@@ -46,7 +46,7 @@ Add your configuration:
 ```ini
 [Service]
 Environment=TELEGRAM_BOT_TOKEN=your_actual_bot_token
-Environment=OPENAI_API_KEY=your_openai_key_optional
+Environment=OPENROUTER_API_KEY=your_openrouter_key_optional
 ```
 
 4. Start the service:
@@ -78,7 +78,7 @@ uv sync
 3. Set environment variables:
 ```bash
 export TELEGRAM_BOT_TOKEN=your_bot_token
-export OPENAI_API_KEY=your_openai_key  # Optional
+export OPENROUTER_API_KEY=your_openrouter_key  # Optional
 ```
 
 4. Run the bot:
@@ -102,7 +102,7 @@ uv run remembot
 - **Long Polling**: Uses Telegram's long polling API (no webhook setup needed)
 - **SQLite Database**: Local storage with user isolation
 - **Content Processing**: Automatic text extraction from URLs, images (OCR), and documents
-- **AI Classification**: Optional OpenAI integration for intelligent categorization
+- **AI Classification**: Optional OpenRouter integration for intelligent categorization
 - **Systemd Service**: Runs as a background service with automatic restart
 
 ## Configuration
@@ -110,7 +110,8 @@ uv run remembot
 Configuration is handled through environment variables:
 
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token (required)
-- `OPENAI_API_KEY`: OpenAI API key for AI features (optional)
+- `OPENROUTER_API_KEY`: OpenRouter API key for AI features (optional)
+- `OPENAI_API_KEY`: OpenAI API key for AI features fallback (optional)
 - `REMEMBOT_DB_PATH`: Database file path (optional, defaults to ~/.remembot/remembot.db)
 - `LOG_LEVEL`: Logging level (optional, defaults to INFO)
 
@@ -134,7 +135,7 @@ Core dependencies are managed automatically:
 - `python-docx`: Word document parsing
 - `PyPDF2`: PDF parsing
 - `openpyxl`: Excel parsing
-- `openai`: AI features (optional)
+- `openai`: AI features (optional, used with OpenRouter)
 - `aiosqlite`: Async SQLite access
 
 ## License
