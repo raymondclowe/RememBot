@@ -155,7 +155,7 @@ class RememBot:
             )
     
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle text messages (URLs and plain text) with enhanced error handling."""
+        """Handle text messages (URLs and plain text) - store for background processing."""
         user_id = update.effective_user.id
         text = update.message.text.strip()
 
@@ -177,203 +177,101 @@ class RememBot:
             logger.info(f"Ignored 4-digit PIN from user {user_id} (for web auth)")
             return
 
-        # Send processing indicator for longer operations
-        is_url = any(self.content_processor._is_url(word) for word in text.split())
-        if is_url:
-            await update.message.reply_text("🔄 Processing URL...", quote=False)
-
         try:
-            # Process the content
-            processed_content = await self.content_processor.process_text(text)
-
-            # Classify the content if extraction was successful
-            taxonomy = None
-            if not processed_content.get('metadata', {}).get('error'):
-                try:
-                    taxonomy = await self.classifier.classify_content(processed_content['extracted_info'])
-                except Exception as e:
-                    logger.warning(f"Classification failed for user {user_id}: {e}")
-                    taxonomy = {'error': str(e)}
-
-            # Store in database with processing time
-            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
+            # Detect content type
+            content_type = 'url' if any(self.content_processor._is_url(word) for word in text.split()) else 'text'
+            
+            # Store content with pending status for background processing
             item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=text,
-                content_type=processed_content['content_type'],
-                metadata=json.dumps(processed_content['metadata']),
-                extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None,
-                processing_time_ms=processing_time
+                content_type=content_type,
+                parse_status='pending'
             )
+            
+            # Send simple confirmation
+            if content_type == 'url':
+                await update.message.reply_text("🔗 URL saved for processing", quote=False)
+            else:
+                await update.message.reply_text("📝 Text saved for processing", quote=False)
+            
+            logger.info(f"Stored {content_type} content as item {item_id} for user {user_id} (pending processing)")
 
-            # Generate embedding asynchronously (don't wait for completion) - disabled for now
-            # if processed_content['extracted_info'] and processed_content['extracted_info'].strip():
-            #     asyncio.create_task(
-            #         self.embeddings_manager.store_embedding(
-            #             item_id, processed_content['extracted_info']
-            #         )
-            #     )
-
-            # Send success feedback for errors or notable processing
-            if processed_content.get('metadata', {}).get('error'):
-                await update.message.reply_text(
-                    f"⚠️ Content stored with processing issues: {processed_content['metadata']['error'][:100]}",
-                    quote=False
-                )
-            elif is_url and processed_content['content_type'] == 'url':
-                title = processed_content.get('metadata', {}).get('title', 'Unknown')
-                await update.message.reply_text(f"✅ Saved: {title}", quote=False)
-
-            logger.info(f"Processed text content for user {user_id} ({processed_content['content_type']})")
-
-        except ContentProcessingError as e:
-            logger.warning(f"Content processing error for user {user_id}: {e}")
-            await update.message.reply_text(f"⚠️ {str(e)}", quote=False)
         except Exception as e:
-            logger.error(f"Error processing text for user {user_id}: {e}")
-            await update.message.reply_text("❌ Failed to process content. Please try again later.", quote=False)
+            logger.error(f"Error storing content for user {user_id}: {e}")
+            await update.message.reply_text("❌ Failed to save content. Please try again later.", quote=False)
     
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle photo messages with enhanced error handling."""
+        """Handle photo messages - store for background processing."""
         user_id = update.effective_user.id
         photo = update.message.photo[-1]  # Get highest resolution
         
-        # Send processing indicator
-        processing_msg = await update.message.reply_text("🔄 Processing image with OCR...", quote=False)
-        
         try:
-            # Validate file size before processing
+            # Validate file size
             if photo.file_size > self.config.max_file_size_mb * 1024 * 1024:
-                await processing_msg.edit_text(
+                await update.message.reply_text(
                     f"❌ Image too large ({photo.file_size / 1024 / 1024:.1f}MB). "
-                    f"Maximum size: {self.config.max_file_size_mb}MB"
+                    f"Maximum size: {self.config.max_file_size_mb}MB",
+                    quote=False
                 )
                 return
             
-            # Get file
-            file = await context.bot.get_file(photo.file_id)
-            
-            # Process the image
-            processed_content = await self.content_processor.process_image(file)
-            
-            # Classify the content if OCR was successful
-            taxonomy = None
-            if not processed_content.get('metadata', {}).get('error'):
-                try:
-                    if processed_content.get('metadata', {}).get('has_text'):
-                        taxonomy = await self.classifier.classify_content(processed_content['extracted_info'])
-                except Exception as e:
-                    logger.warning(f"Classification failed for user {user_id}: {e}")
-                    taxonomy = {'error': str(e)}
-            
-            # Store in database with processing time
-            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
+            # Store image reference for background processing
             item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Photo: {photo.file_id}",
                 content_type="image",
-                metadata=json.dumps(processed_content['metadata']),
-                extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None,
-                processing_time_ms=processing_time
+                metadata=json.dumps({
+                    'file_id': photo.file_id,
+                    'file_size': photo.file_size,
+                    'width': photo.width,
+                    'height': photo.height
+                }),
+                parse_status='pending'
             )
             
-            # Generate embedding for OCR text if available - disabled for now
-            # if (processed_content.get('metadata', {}).get('has_text') and 
-            #     processed_content['extracted_info'] and 
-            #     processed_content['extracted_info'].strip()):
-            #     asyncio.create_task(
-            #         self.embeddings_manager.store_embedding(
-            #             item_id, processed_content['extracted_info']
-            #         )
-            #     )
+            await update.message.reply_text("📷 Image saved for processing", quote=False)
+            logger.info(f"Stored image as item {item_id} for user {user_id} (pending processing)")
             
-            # Update processing message with result
-            if processed_content.get('metadata', {}).get('error'):
-                await processing_msg.edit_text(f"⚠️ Image stored with processing issues: {processed_content['metadata']['error'][:100]}")
-            elif processed_content.get('metadata', {}).get('has_text'):
-                ocr_length = processed_content.get('metadata', {}).get('ocr_length', 0)
-                await processing_msg.edit_text(f"✅ Image processed - extracted {ocr_length} characters of text")
-            else:
-                await processing_msg.edit_text("✅ Image stored (no text detected)")
-            
-            logger.info(f"Processed image content for user {user_id}")
-            
-        except ContentProcessingError as e:
-            logger.warning(f"Content processing error for user {user_id}: {e}")
-            await processing_msg.edit_text(f"⚠️ {str(e)}")
         except Exception as e:
-            logger.error(f"Error processing image for user {user_id}: {e}")
-            await processing_msg.edit_text("❌ Failed to process image. Please try again later.")
+            logger.error(f"Error storing image for user {user_id}: {e}")
+            await update.message.reply_text("❌ Failed to save image. Please try again later.", quote=False)
     
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle document messages with enhanced error handling."""
+        """Handle document messages - store for background processing."""
         user_id = update.effective_user.id
         document = update.message.document
         
-        # Send processing indicator
-        processing_msg = await update.message.reply_text(f"🔄 Processing document: {document.file_name}...", quote=False)
-        
         try:
-            # Validate file size before processing
+            # Validate file size
             if document.file_size > self.config.max_file_size_mb * 1024 * 1024:
-                await processing_msg.edit_text(
+                await update.message.reply_text(
                     f"❌ Document too large ({document.file_size / 1024 / 1024:.1f}MB). "
-                    f"Maximum size: {self.config.max_file_size_mb}MB"
+                    f"Maximum size: {self.config.max_file_size_mb}MB",
+                    quote=False
                 )
                 return
             
-            # Get file
-            file = await context.bot.get_file(document.file_id)
-            
-            # Process the document
-            processed_content = await self.content_processor.process_document(file, document.file_name)
-            
-            # Classify the content if extraction was successful
-            taxonomy = None
-            if not processed_content.get('metadata', {}).get('error'):
-                try:
-                    taxonomy = await self.classifier.classify_content(processed_content['extracted_info'])
-                except Exception as e:
-                    logger.warning(f"Classification failed for user {user_id}: {e}")
-                    taxonomy = {'error': str(e)}
-            
-            # Store in database with processing time
-            processing_time = processed_content.get('metadata', {}).get('processing_time_ms')
+            # Store document reference for background processing
             item_id = await self.db_manager.store_content(
                 user_telegram_id=user_id,
                 original_share=f"Document: {document.file_name}",
                 content_type="document",
-                metadata=json.dumps(processed_content['metadata']),
-                extracted_info=processed_content['extracted_info'],
-                taxonomy=json.dumps(taxonomy) if taxonomy else None,
-                processing_time_ms=processing_time
+                metadata=json.dumps({
+                    'file_id': document.file_id,
+                    'file_name': document.file_name,
+                    'file_size': document.file_size,
+                    'mime_type': document.mime_type
+                }),
+                parse_status='pending'
             )
             
-            # Generate embedding for document content - disabled for now
-            # if processed_content['extracted_info'] and processed_content['extracted_info'].strip():
-            #     asyncio.create_task(
-            #         self.embeddings_manager.store_embedding(
-            #             item_id, processed_content['extracted_info']
-            #         )
-            #     )
+            await update.message.reply_text(f"📄 Document '{document.file_name}' saved for processing", quote=False)
+            logger.info(f"Stored document as item {item_id} for user {user_id} (pending processing)")
             
-            # Update processing message with result
-            if processed_content.get('metadata', {}).get('error'):
-                await processing_msg.edit_text(f"⚠️ Document stored with processing issues: {processed_content['metadata']['error'][:100]}")
-            else:
-                content_length = processed_content.get('metadata', {}).get('content_length', 0)
-                await processing_msg.edit_text(f"✅ Document processed - extracted {content_length} characters")
-            
-            logger.info(f"Processed document content for user {user_id}")
-            
-        except ContentProcessingError as e:
-            logger.warning(f"Content processing error for user {user_id}: {e}")
-            await processing_msg.edit_text(f"⚠️ {str(e)}")
         except Exception as e:
-            logger.error(f"Error processing document for user {user_id}: {e}")
-            await processing_msg.edit_text("❌ Failed to process document. Please try again later.")
+            logger.error(f"Error storing document for user {user_id}: {e}")
+            await update.message.reply_text("❌ Failed to save document. Please try again later.", quote=False)
     
     async def startup(self, application):
         """Initialize services on startup."""
