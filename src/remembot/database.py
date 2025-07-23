@@ -619,3 +619,63 @@ class DatabaseManager:
             rows = await cursor.fetchall()
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in rows]
+    
+    async def store_web_token(self, user_telegram_id: int, token: str, expiry: int):
+        """Store a web authentication token for a user."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # First check if web_tokens table exists, create if not
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS web_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_telegram_id INTEGER NOT NULL,
+                    token TEXT UNIQUE NOT NULL,
+                    expiry INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    used_at TIMESTAMP NULL
+                )
+            ''')
+            
+            # Clean up expired tokens for this user
+            await db.execute('''
+                DELETE FROM web_tokens 
+                WHERE user_telegram_id = ? AND expiry < ?
+            ''', (user_telegram_id, int(time.time())))
+            
+            # Store the new token
+            await db.execute('''
+                INSERT INTO web_tokens (user_telegram_id, token, expiry)
+                VALUES (?, ?, ?)
+            ''', (user_telegram_id, token, expiry))
+            
+            await db.commit()
+            logger.info(f"Stored web token for user {user_telegram_id}")
+    
+    async def validate_web_token(self, token: str, user_telegram_id: int) -> bool:
+        """Validate a web authentication token."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute('''
+                SELECT id, expiry FROM web_tokens 
+                WHERE token = ? AND user_telegram_id = ? AND used_at IS NULL
+            ''', (token, user_telegram_id))
+            
+            row = await cursor.fetchone()
+            if not row:
+                return False
+            
+            token_id, expiry = row
+            current_time = int(time.time())
+            
+            if expiry < current_time:
+                # Token expired, clean it up
+                await db.execute('DELETE FROM web_tokens WHERE id = ?', (token_id,))
+                await db.commit()
+                return False
+            
+            # Mark token as used
+            await db.execute('''
+                UPDATE web_tokens SET used_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            ''', (token_id,))
+            await db.commit()
+            
+            return True
