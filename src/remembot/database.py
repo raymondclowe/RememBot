@@ -272,6 +272,58 @@ class DatabaseManager:
             VALUES (?, ?, ?, ?, ?)
         ''', (user_telegram_id, action_type, content_item_id, query, result_count))
     
+    async def get_user_content(
+        self, 
+        user_telegram_id: int,
+        content_type: Optional[str] = None,
+        source_platform: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Get user's content items with filtering and pagination."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Build base query
+            base_query = '''
+                SELECT id, original_share, content_type, metadata, extracted_info, 
+                       taxonomy, source_platform, created_at
+                FROM content_items 
+                WHERE user_telegram_id = ?
+            '''
+            
+            params = [user_telegram_id]
+            
+            # Add optional filters
+            if content_type:
+                base_query += ' AND content_type = ?'
+                params.append(content_type)
+            
+            if source_platform:
+                base_query += ' AND source_platform = ?'
+                params.append(source_platform)
+            
+            # Add ordering and pagination
+            query_with_order = base_query + ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+            params.extend([limit, offset])
+            
+            # Execute query
+            cursor = await db.execute(query_with_order, params)
+            rows = await cursor.fetchall()
+            
+            # Get total count
+            count_query = base_query.replace(
+                'SELECT id, original_share, content_type, metadata, extracted_info, taxonomy, source_platform, created_at',
+                'SELECT COUNT(*)'
+            )
+            cursor = await db.execute(count_query, params[:-2])  # Exclude limit and offset
+            total = (await cursor.fetchone())[0]
+            
+            # Convert to dictionaries
+            columns = ['id', 'original_share', 'content_type', 'metadata', 'extracted_info', 
+                      'taxonomy', 'source_platform', 'created_at']
+            results = [dict(zip(columns, row)) for row in rows]
+            
+            return results, total
+    
     async def search_content(
         self, 
         user_telegram_id: int, 
@@ -282,6 +334,10 @@ class DatabaseManager:
         offset: int = 0
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Search for content items with FTS5 support and ranking."""
+        # If no search query, just get user content
+        if not query or not query.strip():
+            return await self.get_user_content(user_telegram_id, content_type, source_platform, limit, offset)
+        
         start_time = time.time()
         
         async with aiosqlite.connect(self.db_path) as db:
@@ -655,7 +711,7 @@ class DatabaseManager:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
                 SELECT id, expiry FROM web_tokens 
-                WHERE token = ? AND user_telegram_id = ? AND used_at IS NULL
+                WHERE token = ? AND user_telegram_id = ?
             ''', (token, user_telegram_id))
             
             row = await cursor.fetchone()
@@ -671,7 +727,7 @@ class DatabaseManager:
                 await db.commit()
                 return False
             
-            # Mark token as used
+            # Update the last used time (but don't mark as single-use anymore)
             await db.execute('''
                 UPDATE web_tokens SET used_at = CURRENT_TIMESTAMP 
                 WHERE id = ?

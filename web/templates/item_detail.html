@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RememBot - Item Details</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h2>📄 Content Details</h2>
+            <div class="user-info">
+                <a href="/" class="back-btn">← Back to List</a>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </header>
+
+        <div class="item-detail">
+            <div class="item-meta">
+                <div class="meta-row">
+                    <span class="meta-label">Type:</span>
+                    <span class="content-type {{ item.content_type }}">
+                        {% if item.content_type == 'url' %}🔗
+                        {% elif item.content_type == 'image' %}🖼️
+                        {% elif item.content_type == 'document' %}📁
+                        {% else %}📄{% endif %}
+                        {{ item.content_type }}
+                    </span>
+                </div>
+                
+                {% if item.source_platform and item.source_platform != 'unknown' %}
+                <div class="meta-row">
+                    <span class="meta-label">Source:</span>
+                    <span class="source-platform">{{ item.source_platform }}</span>
+                </div>
+                {% endif %}
+                
+                <div class="meta-row">
+                    <span class="meta-label">Created:</span>
+                    <span>{{ item.created_at }}</span>
+                </div>
+                
+                {% if item.updated_at and item.updated_at != item.created_at %}
+                <div class="meta-row">
+                    <span class="meta-label">Updated:</span>
+                    <span>{{ item.updated_at }}</span>
+                </div>
+                {% endif %}
+                
+                {% if item.processing_time_ms %}
+                <div class="meta-row">
+                    <span class="meta-label">Processing Time:</span>
+                    <span>{{ "%.2f"|format(item.processing_time_ms) }}ms</span>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if metadata.title %}
+            <div class="item-section">
+                <h3>Title</h3>
+                <p class="item-title">{{ metadata.title }}</p>
+            </div>
+            {% endif %}
+
+            <div class="item-section">
+                <h3>Original Content</h3>
+                <div class="content-box">
+                    {% if item.content_type == 'url' %}
+                    <a href="{{ item.original_share }}" target="_blank" rel="noopener">{{ item.original_share }}</a>
+                    {% else %}
+                    <pre class="original-content">{{ item.original_share }}</pre>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if item.extracted_info %}
+            <div class="item-section">
+                <h3>Extracted Information</h3>
+                <div class="content-box extracted-info">
+                    {% if item.content_type == 'url' and metadata.get('content_length', 0) > 1000 %}
+                    <div class="content-preview" id="extractedPreview">
+                        {{ item.extracted_info[:500] }}...
+                        <button onclick="toggleContent()" class="toggle-btn">Show More</button>
+                    </div>
+                    <div class="content-full" id="extractedFull" style="display: none;">
+                        {{ item.extracted_info }}
+                        <button onclick="toggleContent()" class="toggle-btn">Show Less</button>
+                    </div>
+                    {% else %}
+                    <pre class="extracted-content">{{ item.extracted_info }}</pre>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if taxonomy and taxonomy.get('categories') %}
+            <div class="item-section">
+                <h3>Categories</h3>
+                <div class="tags">
+                    {% for category in taxonomy.categories %}
+                    <span class="tag">{{ category }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if taxonomy and taxonomy.get('summary') %}
+            <div class="item-section">
+                <h3>AI Summary</h3>
+                <div class="content-box">
+                    <p class="ai-summary">{{ taxonomy.summary }}</p>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if metadata %}
+            <div class="item-section">
+                <h3>Metadata</h3>
+                <div class="metadata-grid">
+                    {% for key, value in metadata.items() %}
+                    {% if key not in ['title'] %}
+                    <div class="metadata-item">
+                        <span class="metadata-key">{{ key }}:</span>
+                        <span class="metadata-value">
+                            {% if value is string and value|length > 100 %}
+                            {{ value[:100] }}...
+                            {% else %}
+                            {{ value }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="item-actions">
+                <form method="post" action="/delete/{{ item.id }}" class="delete-form" onclick="return confirm('Are you sure you want to delete this item?')">
+                    <button type="submit" class="action-btn delete-btn">🗑️ Delete Item</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function toggleContent() {
+        const preview = document.getElementById('extractedPreview');
+        const full = document.getElementById('extractedFull');
+        
+        if (preview.style.display === 'none') {
+            preview.style.display = 'block';
+            full.style.display = 'none';
+        } else {
+            preview.style.display = 'none';
+            full.style.display = 'block';
+        }
+    }
+    </script>
+</body>
+</html>

@@ -1,27 +1,170 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>RememBot Data</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RememBot - Your Knowledge Base</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2>Welcome, Telegram User {{ telegram_user_id }}</h2>
-    <a href="/logout">Logout</a>
-    <h3>Your Saved Information</h3>
-    <table border="1">
-        <tr>
-            <th>ID</th>
-            <th>Type</th>
-            <th>Content</th>
-            <th>Created At</th>
-        </tr>
-        {% for item in data %}
-        <tr>
-            <td>{{ item.id }}</td>
-            <td>{{ item.type }}</td>
-            <td>{{ item.content }}</td>
-            <td>{{ item.created_at }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <div class="container">
+        <header class="header">
+            <h2>🤖 Your Personal Knowledge Base</h2>
+            <div class="user-info">
+                <span>User: {{ telegram_user_id }}</span>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </header>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <!-- Stats Summary -->
+        {% if stats %}
+        <div class="stats-summary">
+            <div class="stat-item">
+                <span class="stat-number">{{ stats.total_items or 0 }}</span>
+                <span class="stat-label">Total Items</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ stats.recent_items or 0 }}</span>
+                <span class="stat-label">This Week</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number">{{ stats.recent_searches or 0 }}</span>
+                <span class="stat-label">Recent Searches</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Search and Filter -->
+        <div class="search-section">
+            <form method="get" class="search-form">
+                <input type="text" name="search" value="{{ search_query }}" placeholder="Search your knowledge base..." class="search-input">
+                <select name="content_type" class="filter-select">
+                    <option value="">All Types</option>
+                    <option value="text" {% if content_type_filter == "text" %}selected{% endif %}>Text</option>
+                    <option value="url" {% if content_type_filter == "url" %}selected{% endif %}>URLs</option>
+                    <option value="image" {% if content_type_filter == "image" %}selected{% endif %}>Images</option>
+                    <option value="document" {% if content_type_filter == "document" %}selected{% endif %}>Documents</option>
+                </select>
+                <button type="submit" class="search-btn">Search</button>
+                {% if search_query or content_type_filter %}
+                <a href="/" class="clear-btn">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+
+        <!-- Results Info -->
+        <div class="results-info">
+            {% if search_query %}
+                <p>Found {{ total_items }} result(s) for "{{ search_query }}"</p>
+            {% else %}
+                <p>Showing {{ total_items }} item(s) - Page {{ current_page }} of {{ total_pages }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Content Table -->
+        {% if items %}
+        <div class="table-container">
+            <table class="content-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Content</th>
+                        <th>Source</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td>
+                            <span class="content-type {{ item.content_type }}">
+                                {% if item.content_type == 'url' %}🔗
+                                {% elif item.content_type == 'image' %}🖼️
+                                {% elif item.content_type == 'document' %}📁
+                                {% else %}📄{% endif %}
+                                {{ item.content_type }}
+                            </span>
+                        </td>
+                        <td class="content-cell">
+                            <div class="content-preview">
+                                {% if item.title and item.title != 'No title' %}
+                                <strong>{{ item.title }}</strong><br>
+                                {% endif %}
+                                <span class="content-text">{{ item.display_content }}</span>
+                                {% if item.tags %}
+                                <div class="tags">
+                                    {% for tag in item.tags[:3] %}
+                                    <span class="tag">{{ tag }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if item.source_platform != 'unknown' %}
+                            <span class="source-platform">{{ item.source_platform }}</span>
+                            {% else %}
+                            <span class="source-platform unknown">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="date-cell">{{ item.created_at[:16] }}</td>
+                        <td class="actions-cell">
+                            <a href="/item/{{ item.id }}" class="action-btn view-btn">View</a>
+                            <form method="post" action="/delete/{{ item.id }}" class="delete-form" onclick="return confirm('Are you sure you want to delete this item?')">
+                                <button type="submit" class="action-btn delete-btn">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if current_page > 1 %}
+            <a href="?page={{ current_page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if content_type_filter %}&content_type={{ content_type_filter }}{% endif %}" class="page-btn">&laquo; Previous</a>
+            {% endif %}
+            
+            {% for page_num in range(1, total_pages + 1) %}
+                {% if page_num == current_page %}
+                <span class="page-btn current">{{ page_num }}</span>
+                {% elif page_num <= 2 or page_num >= total_pages - 1 or (page_num >= current_page - 1 and page_num <= current_page + 1) %}
+                <a href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if content_type_filter %}&content_type={{ content_type_filter }}{% endif %}" class="page-btn">{{ page_num }}</a>
+                {% elif page_num == 3 or page_num == total_pages - 2 %}
+                <span class="page-btn">...</span>
+                {% endif %}
+            {% endfor %}
+            
+            {% if current_page < total_pages %}
+            <a href="?page={{ current_page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if content_type_filter %}&content_type={{ content_type_filter }}{% endif %}" class="page-btn">Next &raquo;</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            {% if search_query %}
+            <p>No items found matching your search. Try different keywords or clear the filters.</p>
+            {% else %}
+            <p>No content stored yet. Start sharing content with your RememBot on Telegram!</p>
+            <div class="getting-started">
+                <h3>Getting Started:</h3>
+                <ol>
+                    <li>Open Telegram and find your RememBot conversation</li>
+                    <li>Share any URL, image, document, or text message</li>
+                    <li>Your content will appear here automatically</li>
+                </ol>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
 </body>
 </html>

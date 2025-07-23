@@ -73,6 +73,7 @@ Thumbs.db
 .remembot/
 logs/
 temp/
+data/
 
 # UV
 .python-version

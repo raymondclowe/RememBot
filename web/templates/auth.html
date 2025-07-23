@@ -1,12 +1,45 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>RememBot Login</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RememBot - Login</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2>Authenticate with Telegram</h2>
-    <form action="/generate_pin" method="post">
-        <button type="submit">Generate PIN</button>
-    </form>
+    <div class="container">
+        <h2>🤖 RememBot - Personal Knowledge Base</h2>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        {% if info %}
+        <div class="info">{{ info }}</div>
+        {% endif %}
+        
+        <div class="auth-instructions">
+            <h3>How to Access Your Knowledge Base:</h3>
+            <ol>
+                <li>Open your Telegram app</li>
+                <li>Go to your conversation with RememBot</li>
+                <li>Send the command: <code>/web</code></li>
+                <li>Click the link you receive to access your data</li>
+            </ol>
+            
+            <p>Don't have RememBot yet? Start a conversation with <strong>@YourRemembotUsername</strong> on Telegram and send <code>/help</code> to get started.</p>
+        </div>
+        
+        <div class="features">
+            <h3>What RememBot Can Store:</h3>
+            <ul>
+                <li>📄 Text messages and notes</li>
+                <li>🔗 URLs and web pages</li>
+                <li>🖼️ Images (with text extraction)</li>
+                <li>📁 Documents (PDF, Word, Excel, etc.)</li>
+                <li>🎵 Voice notes and audio files</li>
+            </ul>
+        </div>
+    </div>
 </body>
 </html>
