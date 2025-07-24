@@ -54,6 +54,9 @@ class DatabaseManager:
                     processing_time_ms REAL,
                     content_hash TEXT,
                     version INTEGER DEFAULT 1,
+                    parse_status TEXT DEFAULT 'pending',
+                    parse_error TEXT,
+                    parse_attempts INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -63,7 +66,10 @@ class DatabaseManager:
                 'source_platform': 'TEXT',
                 'processing_time_ms': 'REAL',
                 'content_hash': 'TEXT',
-                'version': 'INTEGER DEFAULT 1'
+                'version': 'INTEGER DEFAULT 1',
+                'parse_status': 'TEXT DEFAULT \'pending\'',
+                'parse_error': 'TEXT',
+                'parse_attempts': 'INTEGER DEFAULT 0'
             }
             cursor = conn.execute("PRAGMA table_info(content_items)")
             existing_columns = {row[1] for row in cursor.fetchall()}
@@ -101,8 +107,10 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create FTS5 table if available
-            if fts5_available:
+            # Create FTS5 table if available (controlled by feature flag)
+            # TODO: Fix FTS5 triggers with new schema in future update
+            ENABLE_FTS5 = False  # Feature flag to enable/disable FTS5
+            if ENABLE_FTS5 and fts5_available:
                 conn.execute('''
                     CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
                         content_item_id UNINDEXED,
@@ -191,7 +199,8 @@ class DatabaseManager:
         metadata: Optional[str] = None,
         extracted_info: Optional[str] = None,
         taxonomy: Optional[str] = None,
-        processing_time_ms: Optional[float] = None
+        processing_time_ms: Optional[float] = None,
+        parse_status: str = 'pending'
     ) -> int:
         """Store a content item in the database with enhanced metadata."""
         async with aiosqlite.connect(self.db_path) as db:
@@ -214,10 +223,10 @@ class DatabaseManager:
             cursor = await db.execute('''
                 INSERT INTO content_items 
                 (user_telegram_id, original_share, content_type, metadata, extracted_info, 
-                 taxonomy, source_platform, processing_time_ms, content_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 taxonomy, source_platform, processing_time_ms, content_hash, parse_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (user_telegram_id, original_share, content_type, metadata, extracted_info, 
-                  taxonomy, source_platform, processing_time_ms, content_hash))
+                  taxonomy, source_platform, processing_time_ms, content_hash, parse_status))
             
             await db.commit()
             item_id = cursor.lastrowid
@@ -272,6 +281,63 @@ class DatabaseManager:
             VALUES (?, ?, ?, ?, ?)
         ''', (user_telegram_id, action_type, content_item_id, query, result_count))
     
+    async def get_user_content(
+        self, 
+        user_telegram_id: int,
+        content_type: Optional[str] = None,
+        source_platform: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Get user's content items with filtering and pagination."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Build WHERE clause conditions
+            where_conditions = ['user_telegram_id = ?']
+            params = [user_telegram_id]
+            
+            # Add optional filters
+            if content_type:
+                where_conditions.append('content_type = ?')
+                params.append(content_type)
+            
+            if source_platform:
+                where_conditions.append('source_platform = ?')
+                params.append(source_platform)
+            
+            where_clause = ' AND '.join(where_conditions)
+            
+            # Build main query
+            main_query = f'''
+                SELECT id, original_share, content_type, metadata, extracted_info, 
+                       taxonomy, source_platform, created_at
+                FROM content_items 
+                WHERE {where_clause}
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
+            '''
+            
+            # Build count query using the same WHERE clause
+            count_query = f'''
+                SELECT COUNT(*)
+                FROM content_items 
+                WHERE {where_clause}
+            '''
+            
+            # Execute queries
+            main_params = params + [limit, offset]
+            cursor = await db.execute(main_query, main_params)
+            rows = await cursor.fetchall()
+            
+            # Get total count
+            cursor = await db.execute(count_query, params)
+            total = (await cursor.fetchone())[0]
+            
+            # Convert to dictionaries
+            columns = ['id', 'original_share', 'content_type', 'metadata', 'extracted_info', 
+                      'taxonomy', 'source_platform', 'created_at']
+            results = [dict(zip(columns, row)) for row in rows]
+            
+            return results, total
+    
     async def search_content(
         self, 
         user_telegram_id: int, 
@@ -282,6 +348,10 @@ class DatabaseManager:
         offset: int = 0
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Search for content items with FTS5 support and ranking."""
+        # If no search query, just get user content
+        if not query or not query.strip():
+            return await self.get_user_content(user_telegram_id, content_type, source_platform, limit, offset)
+        
         start_time = time.time()
         
         async with aiosqlite.connect(self.db_path) as db:
@@ -651,7 +721,7 @@ class DatabaseManager:
             logger.info(f"Stored web token for user {user_telegram_id}")
     
     async def validate_web_token(self, token: str, user_telegram_id: int) -> bool:
-        """Validate a web authentication token."""
+        """Validate a web authentication token (single-use for security)."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
                 SELECT id, expiry FROM web_tokens 
@@ -671,7 +741,7 @@ class DatabaseManager:
                 await db.commit()
                 return False
             
-            # Mark token as used
+            # Mark token as used (single-use for security)
             await db.execute('''
                 UPDATE web_tokens SET used_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
@@ -679,3 +749,93 @@ class DatabaseManager:
             await db.commit()
             
             return True
+    
+    async def get_pending_items(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get content items that need processing."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute('''
+                SELECT id, user_telegram_id, original_share, content_type, 
+                       created_at, parse_attempts
+                FROM content_items 
+                WHERE parse_status = 'pending' 
+                AND parse_attempts < 3
+                ORDER BY created_at ASC
+                LIMIT ?
+            ''', (limit,))
+            
+            rows = await cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in rows]
+    
+    async def update_parse_status(
+        self, 
+        item_id: int, 
+        status: str, 
+        extracted_info: Optional[str] = None,
+        taxonomy: Optional[str] = None,
+        processing_time_ms: Optional[float] = None,
+        error_message: Optional[str] = None
+    ) -> bool:
+        """Update the parsing status of an item."""
+        async with aiosqlite.connect(self.db_path) as db:
+            if status == 'processing':
+                # Mark as currently being processed
+                await db.execute('''
+                    UPDATE content_items 
+                    SET parse_status = 'processing', 
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (item_id,))
+            elif status == 'complete':
+                # Mark as completed with results
+                await db.execute('''
+                    UPDATE content_items 
+                    SET parse_status = 'complete',
+                        extracted_info = COALESCE(?, extracted_info),
+                        taxonomy = COALESCE(?, taxonomy),
+                        processing_time_ms = COALESCE(?, processing_time_ms),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (extracted_info, taxonomy, processing_time_ms, item_id))
+            elif status == 'error':
+                # Mark as errored and increment attempts
+                await db.execute('''
+                    UPDATE content_items 
+                    SET parse_status = 'error',
+                        parse_error = ?,
+                        parse_attempts = parse_attempts + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (error_message, item_id))
+            
+            await db.commit()
+            return True
+    
+    async def get_parse_stats(self) -> Dict[str, int]:
+        """Get parsing statistics."""
+        async with aiosqlite.connect(self.db_path) as db:
+            stats = {}
+            
+            # Count by status
+            cursor = await db.execute('''
+                SELECT parse_status, COUNT(*) 
+                FROM content_items 
+                GROUP BY parse_status
+            ''')
+            status_counts = dict(await cursor.fetchall())
+            
+            stats.update({
+                'pending': status_counts.get('pending', 0),
+                'processing': status_counts.get('processing', 0),
+                'complete': status_counts.get('complete', 0),
+                'error': status_counts.get('error', 0)
+            })
+            
+            # Failed items (3+ attempts)
+            cursor = await db.execute('''
+                SELECT COUNT(*) FROM content_items 
+                WHERE parse_attempts >= 3 AND parse_status IN ('error', 'pending')
+            ''')
+            stats['failed'] = (await cursor.fetchone())[0]
+            
+            return stats
